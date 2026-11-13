@@ -33,7 +33,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.education</string>
   <key>NSHighResolutionCapable</key><true/>
-  <key>NSHumanReadableCopyright</key><string>Family project — offline, no data leaves this Mac.</string>
+  <key>NSHumanReadableCopyright</key><string>Offline: no data leaves this Mac.</string>
 </dict>
 </plist>
 PLIST
