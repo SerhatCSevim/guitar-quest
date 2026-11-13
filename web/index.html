@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guitar Quest</title>
+  <link rel="icon" type="image/png" sizes="192x192" href="img/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="img/icon-512.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#explore" aria-label="Guitar Quest home">
+      <svg viewBox="0 0 64 64" class="brand-pick" aria-hidden="true"><path d="M32 4C18 4 8 12 8 24c0 14 14 30 24 36 10-6 24-22 24-36C56 12 46 4 32 4z" fill="currentColor"/><path d="M22 26h20M24 34h16M28 42h8" stroke="#fff" stroke-width="3.5" stroke-linecap="round" opacity=".9"/></svg>
+      <span>Guitar Quest</span>
+    </a>
+    <nav class="tabs" id="tabs">
+      <a href="#explore" data-view="explore">Fretboard</a>
+      <a href="#quest" data-view="quest">Note Quest</a>
+      <a href="#scales" data-view="scales">Scales</a>
+      <a href="#studio" data-view="studio">Practice Studio</a>
+      <a href="#harmony" data-view="harmony">Chords &amp; Harmony</a>
+      <a href="#progress" data-view="progress">My Progress</a>
+    </nav>
+    <button class="icon-btn" id="settingsBtn" type="button" aria-label="Settings" title="Settings"></button>
+  </header>
+  <div id="settingsPanel" class="settings-panel" hidden></div>
+  <main id="view" class="view"></main>
+
+  <script src="js/theory.js"></script>
+  <script src="js/chords.js"></script>
+  <script src="js/songs.js"></script>
+  <script src="js/exercises.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/fretboard.js"></script>
+  <script src="js/notation.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/views/explore.js"></script>
+  <script src="js/views/quest.js"></script>
+  <script src="js/views/scales.js"></script>
+  <script src="js/views/studio.js"></script>
+  <script src="js/views/harmony.js"></script>
+  <script src="js/views/progress.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
