@@ -350,7 +350,7 @@ struct SongPlayerView: View {
 
     private func importPDF() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf]
+        panel.allowedContentTypes = []
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         controller.importPDF(from: url)

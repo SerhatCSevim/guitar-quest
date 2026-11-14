@@ -178,6 +178,24 @@ final class SongLibrary {
         return s
     }
 
+    /// `GQ_ATTACH_TAB=/path/file.gp5[::song title fragment]` imports a tab file into a song from the command line and quits.
+    static func attachTabIfRequested(_ library: SongLibrary) {
+        guard let spec = ProcessInfo.processInfo.environment["GQ_ATTACH_TAB"], !spec.isEmpty else { return }
+        let parts = spec.components(separatedBy: "::")
+        let url = URL(fileURLWithPath: parts[0])
+        let fragment = (parts.count > 1 ? parts[1] : "Tornado").lowercased()
+        let target = library.songs.first { $0.title.lowercased().contains(fragment) } ?? library.songs.sorted { $0.lastOpened > $1.lastOpened }.first
+        do {
+            let (s, piece) = try library.importTab(from: url, into: target)
+            var updated = s
+            updated.loopStart = nil; updated.loopEnd = nil; updated.anchors = []
+            library.update(updated)
+            print("attached \(url.lastPathComponent) to \"\(s.title)\": \(piece.tracks.count) track(s)")
+            for t in piece.tracks { print("  - \(t.name): \(t.score.measures.count) bars, \(t.noteCount) notes, tempo \(t.score.tempo)") }
+            exit(0)
+        } catch { print("attach tab failed: \(error)"); exit(1) }
+    }
+
     /// `GQ_ATTACH_PDF=/path/file.pdf[::song title fragment]` attaches a PDF to a song from the command line and quits
     /// (no file dialog needed). Default target: the first song whose title contains "Tornado", else the most recent song.
     static func attachPDFIfRequested(_ library: SongLibrary) {

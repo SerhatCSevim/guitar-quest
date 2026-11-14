@@ -123,7 +123,7 @@ struct SongsView: View {
     private func importTab() {
         guard let library else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "gp5"), UTType(filenameExtension: "gp4"), UTType(filenameExtension: "gp3"), UTType(filenameExtension: "gp"), UTType(filenameExtension: "musicxml"), UTType(filenameExtension: "mxl"), .xml, .pdf].compactMap { $0 }
+        panel.allowedContentTypes = []   // .gp5/.gp4 have no registered file type on macOS, so no filter here; the extension is checked afterwards
         panel.allowsMultipleSelection = false
         panel.message = "Choose a Guitar Pro (.gp5 / .gp4 / .gp3 / .gp) or MusicXML (.musicxml / .xml / .mxl) tab, or a PDF of the tab"
         guard panel.runModal() == .OK, let url = panel.url else { return }
