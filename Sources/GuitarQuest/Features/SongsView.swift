@@ -87,7 +87,7 @@ struct SongsView: View {
                         GQButton("Import tab…", icon: "square.and.arrow.down", style: .primary) { importTab() }
                         GQButton("Add song (video only)", icon: "plus") { addEmptySong() }
                         Spacer()
-                        SmallText("Tab files: Guitar Pro (.gp5, .gp4, .gp3, .gp) or MusicXML (.musicxml, .xml, .mxl)", muted: true)
+                        SmallText("Tab files: Guitar Pro (.gp5, .gp4, .gp3, .gp), MusicXML (.musicxml, .xml, .mxl) or a PDF of the tab", muted: true)
                     }
                     if let importError {
                         Text(importError).font(.system(size: 13)).foregroundStyle(Theme.bad)
@@ -109,7 +109,7 @@ struct SongsView: View {
                     }
                 }
             }
-            TipText("Where to get tabs: buy the Guitar Pro file on Ultimate Guitar (Pro) or Songsterr Plus, or ask the teacher for a MusicXML export. Tornado of Souls is in the Hal Leonard “Rust in Peace” tab book too.")
+            TipText("Where to get tabs: Guitar Pro files from Ultimate Guitar (community versions are free with an account) or Songsterr Plus, a MusicXML export from the teacher, or a PDF you bought (Musicnotes, Sheet Music Direct). Guitar Pro and MusicXML tabs follow the recording note by note; a PDF shows its pages and turns them for you.")
                 .padding(.top, 16)
         }
         .alert("Delete this song?", isPresented: Binding(get: { confirmDelete != nil }, set: { if !$0 { confirmDelete = nil } })) {
@@ -123,10 +123,19 @@ struct SongsView: View {
     private func importTab() {
         guard let library else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "gp5"), UTType(filenameExtension: "gp4"), UTType(filenameExtension: "gp3"), UTType(filenameExtension: "gp"), UTType(filenameExtension: "musicxml"), UTType(filenameExtension: "mxl"), .xml].compactMap { $0 }
+        panel.allowedContentTypes = [UTType(filenameExtension: "gp5"), UTType(filenameExtension: "gp4"), UTType(filenameExtension: "gp3"), UTType(filenameExtension: "gp"), UTType(filenameExtension: "musicxml"), UTType(filenameExtension: "mxl"), .xml, .pdf].compactMap { $0 }
         panel.allowsMultipleSelection = false
-        panel.message = "Choose a Guitar Pro (.gp5 / .gp4 / .gp3 / .gp) or MusicXML (.musicxml / .xml / .mxl) file"
+        panel.message = "Choose a Guitar Pro (.gp5 / .gp4 / .gp3 / .gp) or MusicXML (.musicxml / .xml / .mxl) tab, or a PDF of the tab"
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        if url.pathExtension.lowercased() == "pdf" {
+            do {
+                let song = try library.importPDF(from: url)
+                importError = nil
+                model.toast("PDF added: \(url.lastPathComponent)")
+                open(song)
+            } catch { importError = "\(error)" }
+            return
+        }
         do {
             let (song, piece) = try library.importTab(from: url)
             importError = nil
@@ -161,13 +170,16 @@ struct SongCard: View {
                     Spacer()
                 }
                 HStack(spacing: 8) {
-                    if song.hasTab { Tag(text: "Tab") } else { Tag(text: "No tab yet") }
+                    if song.hasTab { Tag(text: "Tab") }
+                    if song.hasPDF { Tag(text: "PDF tab") }
+                    if !song.hasTab && !song.hasPDF { Tag(text: "No tab yet") }
                     if song.mediaKind == .youtube && song.youtubeId != nil { Tag(text: "YouTube") }
                     if song.mediaKind == .file && song.mediaPath != nil { Tag(text: "Audio file") }
                     if let lr = song.loopRange { Tag(text: "Loop: bars \(lr.lowerBound + 1)–\(lr.upperBound + 1)") }
                     else if let a = song.mediaLoopA, let b = song.mediaLoopB { Tag(text: "Loop: \(SongPlayerController.clock(a))–\(SongPlayerController.clock(b))") }
                 }
                 if let name = song.tabOriginalName { SmallText("Tab: \(name)", muted: true) }
+                else if let name = song.pdfOriginalName { SmallText("PDF: \(name)", muted: true) }
                 else { SmallText("Import a tab to see it synced with the video.", muted: true) }
                 if let t = song.youtubeTitle, !t.isEmpty { SmallText(t, muted: true).lineLimit(1) }
                 HStack(spacing: 8) {

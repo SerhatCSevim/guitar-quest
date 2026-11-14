@@ -20,6 +20,7 @@ struct GuitarQuestApp: App {
         Snapshots.runIfRequested(services)
         AudioCheck.runIfRequested(services)
         MediaCheck.runIfRequested(services)
+        SongLibrary.attachPDFIfRequested(services.songs)
     }
 
     var body: some Scene {

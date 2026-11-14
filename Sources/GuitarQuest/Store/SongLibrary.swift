@@ -7,6 +7,12 @@ import MusicCore
 
 enum MediaKind: String, Codable { case none, file, youtube }
 
+/// "The recording is at this second when the PDF is on this page" — drives automatic page turns.
+struct PageAnchor: Codable, Equatable {
+    var page: Int          // 0-based
+    var mediaTime: Double
+}
+
 struct SongEntry: Codable, Identifiable, Equatable {
     var id: String = UUID().uuidString
     var title: String
@@ -38,8 +44,46 @@ struct SongEntry: Codable, Identifiable, Equatable {
     var playMode: String = "backing"
     var created: Date = Date()
     var lastOpened: Date = Date()
+    /// A PDF of the tab (bought or printed), shown as pages next to the recording. File name inside the songs folder.
+    var pdfFile: String? = nil
+    var pdfOriginalName: String? = nil
+    var pageAnchors: [PageAnchor] = []
 
     var hasTab: Bool { tabFile != nil }
+    var hasPDF: Bool { pdfFile != nil }
+
+    init(title: String, artist: String = "") { self.title = title; self.artist = artist }
+
+    /// Tolerant decoding: every field falls back to its default, so a library written by an older (or newer)
+    /// version of the app still loads instead of disappearing.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? UUID().uuidString
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? "Song"
+        artist = (try? c.decodeIfPresent(String.self, forKey: .artist)) ?? ""
+        tabFile = try? c.decodeIfPresent(String.self, forKey: .tabFile)
+        tabOriginalName = try? c.decodeIfPresent(String.self, forKey: .tabOriginalName)
+        trackIndex = (try? c.decodeIfPresent(Int.self, forKey: .trackIndex)) ?? 0
+        mediaKind = (try? c.decodeIfPresent(MediaKind.self, forKey: .mediaKind)) ?? .none
+        mediaPath = try? c.decodeIfPresent(String.self, forKey: .mediaPath)
+        youtubeId = try? c.decodeIfPresent(String.self, forKey: .youtubeId)
+        youtubeTitle = try? c.decodeIfPresent(String.self, forKey: .youtubeTitle)
+        anchors = (try? c.decodeIfPresent([SyncAnchor].self, forKey: .anchors)) ?? []
+        loopStart = try? c.decodeIfPresent(Int.self, forKey: .loopStart)
+        loopEnd = try? c.decodeIfPresent(Int.self, forKey: .loopEnd)
+        mediaRate = (try? c.decodeIfPresent(Double.self, forKey: .mediaRate)) ?? 1
+        synthPercent = (try? c.decodeIfPresent(Int.self, forKey: .synthPercent)) ?? 100
+        mediaLoopA = try? c.decodeIfPresent(Double.self, forKey: .mediaLoopA)
+        mediaLoopB = try? c.decodeIfPresent(Double.self, forKey: .mediaLoopB)
+        loopOn = (try? c.decodeIfPresent(Bool.self, forKey: .loopOn)) ?? true
+        guitarAlong = (try? c.decodeIfPresent(Bool.self, forKey: .guitarAlong)) ?? false
+        playMode = (try? c.decodeIfPresent(String.self, forKey: .playMode)) ?? "backing"
+        created = (try? c.decodeIfPresent(Date.self, forKey: .created)) ?? Date()
+        lastOpened = (try? c.decodeIfPresent(Date.self, forKey: .lastOpened)) ?? Date()
+        pdfFile = try? c.decodeIfPresent(String.self, forKey: .pdfFile)
+        pdfOriginalName = try? c.decodeIfPresent(String.self, forKey: .pdfOriginalName)
+        pageAnchors = (try? c.decodeIfPresent([PageAnchor].self, forKey: .pageAnchors)) ?? []
+    }
     var hasMedia: Bool { mediaKind == .youtube ? youtubeId != nil : mediaKind == .file ? mediaPath != nil : false }
     var loopRange: ClosedRange<Int>? {
         guard let a = loopStart, let b = loopEnd else { return nil }
@@ -76,8 +120,14 @@ final class SongLibrary {
     }
 
     func load() {
-        if let d = try? Data(contentsOf: indexURL), let list = try? JSONDecoder().decode([SongEntry].self, from: d) { songs = list }
-        else { songs = [] }
+        guard let d = try? Data(contentsOf: indexURL) else { songs = []; return }
+        do { songs = try JSONDecoder().decode([SongEntry].self, from: d) }
+        catch {
+            // keep the unreadable file for recovery instead of overwriting it with an empty library
+            try? FileManager.default.copyItem(at: indexURL, to: folder.appendingPathComponent("library.unreadable-\(Int(Date().timeIntervalSince1970)).json"))
+            print("song library could not be read: \(error)")
+            songs = []
+        }
     }
 
     func save() {
@@ -96,10 +146,53 @@ final class SongLibrary {
     func remove(_ song: SongEntry) {
         songs.removeAll { $0.id == song.id }
         if let f = song.tabFile { try? FileManager.default.removeItem(at: folder.appendingPathComponent(f)) }
+        if let f = song.pdfFile { try? FileManager.default.removeItem(at: folder.appendingPathComponent(f)) }
         save()
     }
 
     func fileURL(_ song: SongEntry) -> URL? { song.tabFile.map { folder.appendingPathComponent($0) } }
+    func pdfURL(_ song: SongEntry) -> URL? { song.pdfFile.map { folder.appendingPathComponent($0) } }
+
+    /// Copies a PDF tab into the library (the library folder is private to this Mac and never part of the repository).
+    func importPDF(from url: URL, into existing: SongEntry? = nil) throws -> SongEntry {
+        guard url.pathExtension.lowercased() == "pdf" else { throw ImportError.unsupported("Not a PDF file.") }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var song = existing ?? SongEntry(title: url.deletingPathExtension().lastPathComponent)
+        if let old = song.pdfFile { try? FileManager.default.removeItem(at: folder.appendingPathComponent(old)) }
+        let name = song.id + ".pdf"
+        let dest = folder.appendingPathComponent(name)
+        try? FileManager.default.removeItem(at: dest)
+        try FileManager.default.copyItem(at: url, to: dest)
+        song.pdfFile = name
+        song.pdfOriginalName = url.lastPathComponent
+        song.pageAnchors = []
+        update(song)
+        return song
+    }
+
+    func removePDF(from song: SongEntry) -> SongEntry {
+        var s = song
+        if let f = s.pdfFile { try? FileManager.default.removeItem(at: folder.appendingPathComponent(f)) }
+        s.pdfFile = nil; s.pdfOriginalName = nil; s.pageAnchors = []
+        update(s)
+        return s
+    }
+
+    /// `GQ_ATTACH_PDF=/path/file.pdf[::song title fragment]` attaches a PDF to a song from the command line and quits
+    /// (no file dialog needed). Default target: the first song whose title contains "Tornado", else the most recent song.
+    static func attachPDFIfRequested(_ library: SongLibrary) {
+        guard let spec = ProcessInfo.processInfo.environment["GQ_ATTACH_PDF"], !spec.isEmpty else { return }
+        let parts = spec.components(separatedBy: "::")
+        let url = URL(fileURLWithPath: parts[0])
+        let fragment = (parts.count > 1 ? parts[1] : "Tornado").lowercased()
+        let target = library.songs.first { $0.title.lowercased().contains(fragment) } ?? library.songs.sorted { $0.lastOpened > $1.lastOpened }.first
+        guard let target else { print("attach pdf: no song found"); exit(1) }
+        do {
+            let s = try library.importPDF(from: url, into: target)
+            print("attached \(url.lastPathComponent) to \"\(s.title)\" → \(library.pdfURL(s)!.path)")
+            exit(0)
+        } catch { print("attach pdf failed: \(error)"); exit(1) }
+    }
 
     // MARK: importing tab files
 

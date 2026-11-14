@@ -4,6 +4,7 @@
 import SwiftUI
 import AppKit
 import Observation
+import PDFKit
 import MusicCore
 
 enum SongPlayMode: String { case backing, synth }
@@ -21,6 +22,13 @@ final class SongPlayerController {
     private(set) var tabError: String? = nil
     private(set) var syncMap: SyncMap? = nil
     private(set) var tempoTimeline: TempoTimeline? = nil
+
+    // PDF tab
+    private(set) var pdf: PDFDocument? = nil
+    private(set) var pdfPage = 0
+    private var lastManualPageChange = Date.distantPast
+    /// When a song has both a Guitar Pro/MusicXML tab and a PDF: which one the tab card shows.
+    var showPDF = false
 
     // media
     private(set) var player: MediaPlayerBase? = nil
@@ -72,8 +80,59 @@ final class SongPlayerController {
             updateClock()
         }
         loadTab()
+        loadPDF()
         loadMedia()
         startTimer()
+    }
+
+    // MARK: - PDF tab
+
+    func loadPDF() {
+        pdf = nil; pdfPage = 0
+        guard let url = library.pdfURL(song), let doc = PDFDocument(url: url), doc.pageCount > 0 else { return }
+        pdf = doc
+        if score == nil { showPDF = true }
+    }
+
+    func importPDF(from url: URL) {
+        do {
+            song = try library.importPDF(from: url, into: song)
+            loadPDF()
+            showPDF = true
+            services.model.toast("PDF added: \(url.lastPathComponent)")
+        } catch { tabError = "\(error)" }
+    }
+
+    func removePDF() {
+        song = library.removePDF(from: song)
+        pdf = nil; pdfPage = 0; showPDF = false
+    }
+
+    func userChangedPage(_ p: Int) {
+        guard let doc = pdf else { return }
+        let clamped = max(0, min(doc.pageCount - 1, p))
+        if clamped != pdfPage { pdfPage = clamped }
+        lastManualPageChange = Date()
+    }
+
+    /// Records "the recording is at the current second on the page shown now" (one anchor per page).
+    func markPage() {
+        guard let t = player?.currentTime else { return }
+        change { s in
+            s.pageAnchors.removeAll { $0.page == pdfPage || abs($0.mediaTime - t) < 0.5 }
+            s.pageAnchors.append(PageAnchor(page: pdfPage, mediaTime: t))
+            s.pageAnchors.sort { $0.mediaTime < $1.mediaTime }
+        }
+        services.model.toast("Page \(pdfPage + 1) marked at \(Self.clockPrecise(t))")
+    }
+    func removePageAnchor(_ page: Int) { change { $0.pageAnchors.removeAll { $0.page == page } } }
+    func clearPageAnchors() { change { $0.pageAnchors = [] } }
+
+    /// Auto page turn while the recording plays (not right after the user flipped a page by hand).
+    private func followPDFPage(now: Double) {
+        guard pdf != nil, !song.pageAnchors.isEmpty, Date().timeIntervalSince(lastManualPageChange) > 3 else { return }
+        let due = song.pageAnchors.filter { $0.mediaTime <= now + 0.05 }.max { $0.mediaTime < $1.mediaTime }
+        if let d = due, d.page != pdfPage { pdfPage = d.page }
     }
 
     // MARK: - persistence
@@ -390,6 +449,7 @@ final class SongPlayerController {
         updateClock()
         guard mode == .backing else { return }
         let now = p.currentTime
+        if p.isPlaying { followPDFPage(now: now) }
         // A/B loop
         if song.loopOn, p.isPlaying, let (a, b) = mediaLoopBounds(), now >= b - 0.02 {
             p.seek(to: a)

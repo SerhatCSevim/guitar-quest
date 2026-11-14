@@ -27,7 +27,9 @@ struct SongPlayerView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             backingCard
-            if score != nil {
+            if controller.pdf != nil && (score == nil || controller.showPDF) {
+                PDFTabCard(controller: controller, onImportTab: importTab)
+            } else if score != nil {
                 tabCard
                 if controller.mode == .synth { synthBar }
                 Card(padding: Theme.fretboardCardPadding) {
@@ -58,7 +60,13 @@ struct SongPlayerView: View {
                     }
                     .frame(width: 220)
                 }
-                if score != nil {
+                if score != nil && controller.pdf != nil {
+                    Field("Show") {
+                        Segmented(options: [SegOption(false, "Tab"), SegOption(true, "PDF")],
+                                  selection: Binding(get: { controller.showPDF }, set: { controller.showPDF = $0 }))
+                    }
+                }
+                if score != nil && !controller.showPDF {
                     Field("Play with") {
                         Segmented(options: [SegOption(SongPlayMode.backing, "Backing track"), SegOption(.synth, "Guitar sound")],
                                   selection: Binding(get: { controller.mode }, set: { controller.setMode($0) }))
@@ -322,16 +330,30 @@ struct SongPlayerView: View {
                     GQButton("Import tab…", icon: "square.and.arrow.down", style: .primary, small: true) { importTab() }
                     SmallText("Guitar Pro (.gp5 / .gp4 / .gp3 / .gp) or MusicXML (.musicxml / .xml / .mxl)", muted: true)
                 }
+                HStack(spacing: 8) {
+                    GQButton("Add PDF tab…", icon: "doc.richtext", small: true) { importPDF() }
+                    SmallText("A PDF shows its pages next to the video; mark each page once and they turn by themselves.", muted: true)
+                }
             }
         }
     }
 
     private func importTab() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [UTType(filenameExtension: "musicxml"), UTType(filenameExtension: "mxl"), UTType(filenameExtension: "gp"), .xml].compactMap { $0 }
+        panel.allowedContentTypes = [UTType(filenameExtension: "gp5"), UTType(filenameExtension: "gp4"), UTType(filenameExtension: "gp3"), UTType(filenameExtension: "gp"),
+                                     UTType(filenameExtension: "musicxml"), UTType(filenameExtension: "mxl"), .xml, .pdf].compactMap { $0 }
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a Guitar Pro / MusicXML tab, or a PDF of the tab"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        if url.pathExtension.lowercased() == "pdf" { controller.importPDF(from: url) } else { controller.importTab(from: url) }
+    }
+
+    private func importPDF() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.pdf]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        controller.importTab(from: url)
+        controller.importPDF(from: url)
     }
 
     // MARK: - synth transport (Guitar sound mode)
@@ -398,6 +420,10 @@ struct SongPlayerView: View {
         model.keyHandler = { press in
             if press.key == .space { controller.togglePlay(); return .handled }
             if press.key == .escape { controller.stop(); return .handled }
+            if controller.pdf != nil && (score == nil || controller.showPDF) {
+                if press.key == .rightArrow || press.key == .pageDown { controller.userChangedPage(controller.pdfPage + 1); return .handled }
+                if press.key == .leftArrow || press.key == .pageUp { controller.userChangedPage(controller.pdfPage - 1); return .handled }
+            }
             if press.characters == "[" { if score != nil { controller.setLoopA() } else { controller.setMediaLoopA() }; return .handled }
             if press.characters == "]" { if score != nil { controller.setLoopB() } else { controller.setMediaLoopB() }; return .handled }
             if press.characters.lowercased() == "l" { controller.toggleLoop(); return .handled }
