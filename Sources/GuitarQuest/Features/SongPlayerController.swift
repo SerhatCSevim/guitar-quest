@@ -345,7 +345,8 @@ final class SongPlayerController {
     func tapMeasure(_ m: Int) {
         guard score != nil else { return }
         if tapSetsA || song.loopStart == nil {
-            change { $0.loopStart = m; $0.loopEnd = m }
+            // first click: only A — no loop is active until B is chosen (a one-bar loop by accident is confusing)
+            change { $0.loopStart = m; $0.loopEnd = nil }
             tapSetsA = false
         } else {
             let a = song.loopStart ?? m
@@ -356,9 +357,12 @@ final class SongPlayerController {
         applyTransportSettings()
     }
 
+    /// Loop range to draw: the finished A–B range, or just A while B is still being chosen.
+    var displayLoopRange: ClosedRange<Int>? { song.loopRange ?? song.loopStart.map { $0...$0 } }
+
     func setLoopA(atCursor: Bool = true) {
         guard let m = cursorMeasure else { return }
-        change { $0.loopStart = m; if let b = $0.loopEnd, b < m { $0.loopEnd = m }; if $0.loopEnd == nil { $0.loopEnd = m } }
+        change { $0.loopStart = m; if let b = $0.loopEnd, b < m { $0.loopEnd = nil } }
         tapSetsA = false
         applyTransportSettings()
     }
@@ -418,6 +422,31 @@ final class SongPlayerController {
         rebuildSync()
         services.model.toast("Anchor: bar \(bar) at \(SongPlayerController.clock(t))")
     }
+
+    /// "The song starts now": bar 1 of the tab = the current second of the recording. Replaces any earlier bar-1 anchor.
+    func markSongStart() {
+        guard let p = player else { return }
+        let t = p.currentTime
+        change { s in
+            s.anchors.removeAll { $0.tick == 0 }
+            s.anchors.append(SyncAnchor(mediaTime: t, tick: 0))
+            s.anchors.sort { $0.mediaTime < $1.mediaTime }
+        }
+        rebuildSync()
+        services.model.toast("Bar 1 starts at \(SongPlayerController.clockPrecise(t))")
+    }
+
+    /// Shift the whole mapping: negative = the tab was running late (move it earlier), positive = running early.
+    func nudgeSync(by seconds: Double) {
+        change { s in
+            if s.anchors.isEmpty { s.anchors = [SyncAnchor(mediaTime: max(0, seconds), tick: 0)] }
+            else { s.anchors = s.anchors.map { SyncAnchor(mediaTime: max(0, $0.mediaTime + seconds), tick: $0.tick) } }
+        }
+        rebuildSync()
+    }
+
+    /// Offset of bar 1 in the recording, for display.
+    var songStartTime: Double? { syncMap?.mediaTime(atTick: 0) }
 
     func removeAnchor(_ a: SyncAnchor) {
         change { $0.anchors.removeAll { $0 == a } }

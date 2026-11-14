@@ -214,6 +214,9 @@ struct SongPlayerView: View {
                 } else {
                     SmallText("Press Set A at the start of the part, Set B at its end.", muted: true)
                 }
+            } else if song.loopRange == nil, let a = song.loopStart {
+                Text("A = bar \(a + 1) — now click above the bar where the loop should end").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.muted)
+                GQButton("Cancel", style: .ghost, small: true) { controller.clearLoop() }
             } else if let lr = song.loopRange {
                 Text("Bars \(lr.lowerBound + 1)–\(lr.upperBound + 1)").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.teal)
                 if let (a, b) = controller.mediaLoopBounds() {
@@ -234,7 +237,21 @@ struct SongPlayerView: View {
                 Image(systemName: "link").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.teal)
                 Text("Sync the tab with the recording").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.ink)
             }
-            SmallText("Pause the video exactly where a bar starts, pick that bar, press Mark. One anchor at the first note is usually enough; add another one later in the song if the cursor drifts.", muted: true)
+            HStack(spacing: 10) {
+                GQButton("Song starts now", icon: "flag.fill", style: .primary, small: true, disabled: !(player?.isReady ?? false)) { controller.markSongStart() }
+                    .help("Press at the very first note of the song (pause the video there first if you like)")
+                if let t0 = controller.songStartTime {
+                    SmallText("Bar 1 = \(SongPlayerController.clockPrecise(t0))", muted: true)
+                }
+                HStack(spacing: 4) {
+                    GQButton("−0.2 s", small: true) { controller.nudgeSync(by: -0.2) }.help("The tab is running late: move it earlier")
+                    GQButton("+0.2 s", small: true) { controller.nudgeSync(by: 0.2) }.help("The tab is running early: move it later")
+                }
+                if controller.player?.isPlaying == true, let m = controller.cursorMeasure {
+                    SmallText("Tab is at bar \(m + 1)", muted: true)
+                }
+            }
+            SmallText("1. Play the video and press “Song starts now” on the very first note. 2. If the cursor drifts later in the song, pause where a bar starts, pick that bar and press Mark — two anchors correct a tempo difference.", muted: true)
             HStack(spacing: 8) {
                 SmallText("Bar")
                 Stepper(value: $controller.pendingAnchorBar, in: 1...max(1, score?.measures.count ?? 1)) {
@@ -251,7 +268,7 @@ struct SongPlayerView: View {
                 }
             }
             if song.anchors.isEmpty {
-                SmallText("No anchors: the tab starts at 0:00.", muted: true)
+                SmallText("No anchors yet: the tab is assumed to start at 0:00 of the video — usually wrong, press “Song starts now”.", muted: true)
             } else {
                 FlowLayout(hSpacing: 6, vSpacing: 6) {
                     ForEach(song.anchors, id: \.self) { a in
@@ -296,13 +313,13 @@ struct SongPlayerView: View {
                 ZStack {
                     if controller.isDebugActive {
                         ScoreView(score: score, options: notationOptions, active: controller.active, next: controller.next,
-                                  loopRange: song.loopRange)
+                                  loopRange: controller.displayLoopRange)
                     } else {
                         ScrollViewReader { proxy in
                             ScrollView(.vertical) {
                                 ScoreView(score: score, options: notationOptions, active: controller.active, next: controller.next,
                                           onSeek: { controller.seek(toEvent: $0) }, scrollProxy: proxy,
-                                          loopRange: song.loopRange, onMeasureTap: { controller.tapMeasure($0) })
+                                          loopRange: controller.displayLoopRange, onMeasureTap: { controller.tapMeasure($0) })
                                     .padding(.trailing, 4)
                             }
                             .frame(minHeight: 200, maxHeight: 420)
