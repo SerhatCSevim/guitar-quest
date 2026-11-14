@@ -9,6 +9,8 @@ struct NotationDrawer {
     let L: ScoreLayout
     var active: Int?
     var next: Int?
+    /// Measures highlighted as the practice loop (Song Player).
+    var loopRange: ClosedRange<Int>? = nil
 
     static let ink = Theme.ink
     static let staffLine = Color(hex: 0x2B2F3A)
@@ -34,7 +36,17 @@ struct NotationDrawer {
         let o = L.opts
         let ks = L.score.keySig
         let xL = 6.0, xR = sys.right
-        // cursor (behind everything)
+        // loop range tint (behind everything)
+        if let lr = loopRange {
+            let top = o.showStaff ? L.staffTop - 30 : L.tabTop - 16
+            let bottom = (L.namesY ?? (o.showTab ? L.tabBottom : L.staffBottom)) + 12
+            for b in sys.bars where lr.contains(b.m) {
+                ctx.fill(Path(CGRect(x: b.x0, y: top, width: b.x1 - b.x0, height: bottom - top)), with: .color(Theme.teal.opacity(0.08)))
+            }
+            if let b = sys.bars.first(where: { $0.m == lr.lowerBound }) { line(&ctx, b.x0, top, b.x0, bottom, Theme.teal.opacity(0.7), 2) }
+            if let b = sys.bars.first(where: { $0.m == lr.upperBound }) { line(&ctx, b.x1, top, b.x1, bottom, Theme.teal.opacity(0.7), 2) }
+        }
+        // cursor
         if let a = active, a >= 0, a < L.prep.count, L.prep[a].system == si {
             let top = o.showStaff ? L.staffTop - 30 : L.tabTop - 16
             let bottom = (L.namesY ?? (o.showTab ? L.tabBottom : L.staffBottom)) + 12
@@ -56,9 +68,7 @@ struct NotationDrawer {
             }
             if sys.first {
                 x += ks.list.isEmpty ? 0 : 6
-                let f = Font.custom("Georgia", size: 23).weight(.heavy)
-                ctx.draw(Text("4").font(f).foregroundColor(Self.ink), at: CGPoint(x: x + 9, y: y(6)), anchor: .center)
-                ctx.draw(Text("4").font(f).foregroundColor(Self.ink), at: CGPoint(x: x + 9, y: y(2)), anchor: .center)
+                timeSig(&ctx, L.score.time, x + 9)
             }
         }
         // ---- tab
@@ -88,8 +98,15 @@ struct NotationDrawer {
                 line(&ctx, b.x1, barTop, b.x1, barBot, Self.staffLine, 1.2)
             }
             if L.score.measures.count > 1 {
-                ctx.draw(Text(String(b.m + 1)).font(.system(size: 10).italic()).foregroundColor(Self.barNum),
+                ctx.draw(Text(String(L.score.measureLabel(b.m))).font(.system(size: 10).italic()).foregroundColor(Self.barNum),
                          at: CGPoint(x: b.x0 + 3, y: barTop - (o.showStaff ? 26 : 8) - 4), anchor: .leading)
+            }
+            if let ts = b.timeSig {
+                if o.showStaff { timeSig(&ctx, ts, b.x0 + (12 + 13) * sys.scale) }
+                else {
+                    ctx.draw(Text("\(ts[0])/\(ts[1])").font(.system(size: 11, weight: .heavy)).foregroundColor(Self.ink),
+                             at: CGPoint(x: b.x0 + (12 + 13) * sys.scale, y: L.tabTop - 8), anchor: .center)
+                }
             }
         }
         // ---- events
@@ -99,8 +116,14 @@ struct NotationDrawer {
             if L.prep[g.items[0]].system != si { continue }
             if g.items.count > 1 && o.showStaff { drawBeam(&ctx, g) }
             if g.items.count > 1 && !o.showStaff && o.showTab { drawTabBeam(&ctx, g) }
-            if g.tuplet == 3 { drawTupletMark(&ctx, g) }
+            if g.tuplet > 1 { drawTupletMark(&ctx, g) }
         }
+    }
+
+    func timeSig(_ ctx: inout GraphicsContext, _ ts: [Int], _ cx: Double) {
+        let f = Font.custom("Georgia", size: 23).weight(.heavy)
+        ctx.draw(Text(String(ts[0])).font(f).foregroundColor(Self.ink), at: CGPoint(x: cx, y: y(6)), anchor: .center)
+        ctx.draw(Text(String(ts[1])).font(f).foregroundColor(Self.ink), at: CGPoint(x: cx, y: y(2)), anchor: .center)
     }
 
     func drawClef(_ ctx: inout GraphicsContext, _ x: Double, _ yG: Double) {
@@ -127,8 +150,22 @@ struct NotationDrawer {
                 let txt = String(n.fret)
                 let w = 7.5 * Double(txt.count) + 3
                 ctx.fill(Path(CGRect(x: x - w / 2, y: yy - 7, width: w, height: 14)), with: .color(isActive ? Color(hex: 0xFFF3EC) : .white))
-                let col: Color = isActive ? Theme.accent : (next == i ? Theme.teal : Self.ink)
+                var col: Color = isActive ? Theme.accent : (next == i ? Theme.teal : Self.ink)
+                if n.tied {
+                    col = col.opacity(0.45)
+                    // tie from the previous event on the same string (same system only)
+                    if i > 0, L.prep[i - 1].system == p.system, L.prep[i - 1].ev.notes.contains(where: { $0.string == n.string }) {
+                        let x0 = L.prep[i - 1].x + 6, x1 = x - 6
+                        var arc = Path(); arc.move(to: CGPoint(x: x0, y: yy + 7))
+                        arc.addQuadCurve(to: CGPoint(x: x1, y: yy + 7), control: CGPoint(x: (x0 + x1) / 2, y: yy + 13))
+                        ctx.stroke(arc, with: .color(Self.ink.opacity(0.7)), lineWidth: 1.2)
+                    }
+                }
                 ctx.draw(Text(txt).font(.system(size: 13, weight: .heavy)).foregroundColor(col), at: CGPoint(x: x, y: yy), anchor: .center)
+                if !n.marks.isEmpty {
+                    ctx.draw(Text(n.marks.joined(separator: " ")).font(.system(size: 9, weight: .bold).italic()).foregroundColor(Theme.muted),
+                             at: CGPoint(x: x, y: yy - 12), anchor: .center)
+                }
             }
         }
         if o.showNames && !ev.rest, let ny = L.namesY {
@@ -230,17 +267,23 @@ struct NotationDrawer {
             ctx.fill(p, with: .color(Self.ink))
         }
         seg(g.x0 - 0.6, g.x1 + 0.6, 0)
-        // secondary beams for sixteenths
-        var k = 0
-        while k < items.count {
-            if items[k].nv.flags < 2 { k += 1; continue }
-            var j = k
-            while j + 1 < items.count && items[j + 1].nv.flags >= 2 { j += 1 }
-            let xa = Notation.stemX(items[k], up), xb = Notation.stemX(items[j], up)
-            if j > k { seg(xa - 0.6, xb + 0.6, 7.2) }
-            else if k == items.count - 1 { seg(xa - 8, xa, 7.2) }
-            else { seg(xa, xa + 8, 7.2) }
-            k = j + 1
+        // secondary (16th), tertiary (32nd) … beams
+        let maxFlags = items.map { $0.nv.flags }.max() ?? 1
+        if maxFlags >= 2 {
+            for level in 2...maxFlags {
+                let off = 7.2 * Double(level - 1)
+                var k = 0
+                while k < items.count {
+                    if items[k].nv.flags < level { k += 1; continue }
+                    var j = k
+                    while j + 1 < items.count && items[j + 1].nv.flags >= level { j += 1 }
+                    let xa = Notation.stemX(items[k], up), xb = Notation.stemX(items[j], up)
+                    if j > k { seg(xa - 0.6, xb + 0.6, off) }
+                    else if k == items.count - 1 { seg(xa - 8, xa, off) }
+                    else { seg(xa, xa + 8, off) }
+                    k = j + 1
+                }
+            }
         }
     }
 
@@ -255,15 +298,15 @@ struct NotationDrawer {
         } else {
             yy = (L.opts.showStaff ? L.staffTop - 10 : (L.rhythmTop.map { $0 + 42 } ?? L.tabTop - 6)) - 4
         }
-        ctx.draw(Text("3").font(f).foregroundColor(Self.tuplet), at: CGPoint(x: xm, y: yy), anchor: .center)
+        ctx.draw(Text(String(g.tuplet)).font(f).foregroundColor(Self.tuplet), at: CGPoint(x: xm, y: yy), anchor: .center)
     }
 
     func drawRest(_ ctx: inout GraphicsContext, _ p: PreparedEvent) {
         let x = p.x
-        let d = p.ev.tuplet == 3 ? p.ev.dur * 3 / 2 : p.ev.dur
-        if d >= 48 { ctx.fill(Path(CGRect(x: x - 6, y: y(6), width: 12, height: 5)), with: .color(Self.ink)); return }
-        if d >= 24 { ctx.fill(Path(CGRect(x: x - 6, y: y(4) - 5, width: 12, height: 5)), with: .color(Self.ink)); return }
-        if d >= 12 {
+        let q = Double(p.ev.writtenDur) / Double(L.score.tpb)   // quarters
+        if q >= 4 { ctx.fill(Path(CGRect(x: x - 6, y: y(6), width: 12, height: 5)), with: .color(Self.ink)); return }
+        if q >= 2 { ctx.fill(Path(CGRect(x: x - 6, y: y(4) - 5, width: 12, height: 5)), with: .color(Self.ink)); return }
+        if q >= 1 {
             var q = Path()
             q.move(to: CGPoint(x: x - 2.5, y: y(7.6)))
             q.addLine(to: CGPoint(x: x + 3.5, y: y(5.8)))
@@ -273,7 +316,7 @@ struct NotationDrawer {
             ctx.stroke(q, with: .color(Self.ink), style: StrokeStyle(lineWidth: 2.6, lineJoin: .miter))
             return
         }
-        let flags = d >= 6 ? 1 : 2
+        let flags = max(1, p.nv.flags)
         for k in 0..<flags {
             let yy = y(5) + Double(k) * 8
             let cx = x - 2 - Double(k) * 1.5

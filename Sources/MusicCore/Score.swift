@@ -23,8 +23,12 @@ public struct ScoreNote: Hashable, Sendable {
     public var fret: Int
     public var midi: Int
     public var spelled: SpelledNote
-    public init(string: Int, fret: Int, midi: Int, spelled: SpelledNote) {
-        self.string = string; self.fret = fret; self.midi = midi; self.spelled = spelled
+    /// Continuation of a note tied from the previous event (not plucked again; drawn with a tie).
+    public var tied: Bool = false
+    /// Playing-technique labels shown above the tab number (imported scores): "h", "p", "/", "b", "PM", "~" …
+    public var marks: [String] = []
+    public init(string: Int, fret: Int, midi: Int, spelled: SpelledNote, tied: Bool = false, marks: [String] = []) {
+        self.string = string; self.fret = fret; self.midi = midi; self.spelled = spelled; self.tied = tied; self.marks = marks
     }
     public init(string: Int, fret: Int, spelled: SpelledNote) {
         self.init(string: string, fret: fret, midi: Theory.midiAt(string, fret), spelled: spelled)
@@ -35,16 +39,39 @@ public struct ScoreEvent: Hashable, Sendable {
     public var i: Int = 0
     public var tick: Int = 0
     public var measure: Int = 0
+    /// Tick where this event's measure starts (set by finalize; measures may have different lengths in imported scores).
+    public var barStart: Int = 0
     public var dur: Int
+    /// Tuplet "actual" count (0 = none, 3 = triplet …). `tupletNormal` is the "normal" count (3 → 2, 5/6/7 → 4, 2 → 3, 4 → 3).
     public var tuplet: Int
+    public var tupletNormal: Int
     public var rest: Bool
     public var notes: [ScoreNote]
-    public init(dur: Int, tuplet: Int = 0, rest: Bool = false, notes: [ScoreNote]) {
+    public init(dur: Int, tuplet: Int = 0, tupletNormal: Int? = nil, rest: Bool = false, notes: [ScoreNote]) {
         self.dur = dur; self.tuplet = tuplet; self.rest = rest; self.notes = notes
+        self.tupletNormal = tupletNormal ?? ScoreEvent.defaultNormal(for: tuplet)
     }
+    public static func defaultNormal(for actual: Int) -> Int {
+        switch actual {
+        case 0, 1: return 0
+        case 2, 4: return 3
+        case 3: return 2
+        case 5, 6, 7: return 4
+        default: return 8
+        }
+    }
+    /// Duration in ticks as it is *written* (a triplet eighth of 4 ticks is written as a 6-tick eighth).
+    public var writtenDur: Int { tuplet > 1 && tupletNormal > 0 ? dur * tuplet / tupletNormal : dur }
 }
 
-public enum ScoreSource: String, Sendable { case scale, song, single }
+/// A tempo change at a tick (quarter notes per minute).
+public struct TempoMark: Hashable, Sendable {
+    public var tick: Int
+    public var bpm: Double
+    public init(tick: Int, bpm: Double) { self.tick = tick; self.bpm = bpm }
+}
+
+public enum ScoreSource: String, Sendable { case scale, song, single, imported }
 
 public struct Score: Hashable, Sendable {
     public var title: String
@@ -58,6 +85,45 @@ public struct Score: Hashable, Sendable {
     public var events: [ScoreEvent]
     public var measures: [[Int]]
     public var totalTicks: Int
+    /// Per-measure start tick and length (constant 48 for the built-in 4/4 scores).
+    public var measureStarts: [Int] = []
+    public var measureLengths: [Int] = []
+    /// Time signature per measure (beats, beat type); nil entries mean "same as before".
+    public var measureTimes: [[Int]?] = []
+    /// Tempo changes (sorted by tick). Empty = constant `tempo`.
+    public var tempoMap: [TempoMark] = []
+    /// Printed bar numbers (1-based). Differs from the index when repeats were unrolled at import.
+    public var measureLabels: [Int] = []
+    public func measureLabel(_ m: Int) -> Int { m < measureLabels.count ? measureLabels[m] : m + 1 }
+
+    public func measureStart(_ m: Int) -> Int { m < measureStarts.count ? measureStarts[m] : m * bar }
+    public func measureLength(_ m: Int) -> Int { m < measureLengths.count ? measureLengths[m] : bar }
+    /// Time signature in force at measure `m`.
+    public func timeSignature(at m: Int) -> [Int] {
+        var t = time
+        if m < measureTimes.count { for k in 0...m { if let ts = measureTimes[k] { t = ts } } }
+        return t
+    }
+    /// Measure index containing `tick` (binary search over measureStarts).
+    public func measureIndex(atTick tick: Int) -> Int {
+        guard !measureStarts.isEmpty else { return max(0, min(measures.count - 1, tick / bar)) }
+        var lo = 0, hi = measureStarts.count - 1
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if measureStarts[mid] <= tick { lo = mid } else { hi = mid - 1 }
+        }
+        return lo
+    }
+    /// Index of the event sounding at `tick` (or the next one), nil past the end.
+    public func eventIndex(atTick tick: Int) -> Int? {
+        guard !events.isEmpty, tick < totalTicks else { return nil }
+        var lo = 0, hi = events.count - 1
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if events[mid].tick <= tick { lo = mid } else { hi = mid - 1 }
+        }
+        return lo
+    }
 }
 
 public struct ScoreMeta: Sendable {
@@ -130,14 +196,63 @@ public enum Exercises {
             events[i].tick = tick
             let m = tick / BAR
             events[i].measure = m
+            events[i].barStart = m * BAR
             if (tick + events[i].dur - 1) / BAR != m { throw ScoreError.crossesBar(i) }
             while measures.count <= m { measures.append([]) }
             measures[m].append(i)
             tick += events[i].dur
         }
         if tick % BAR != 0 { throw ScoreError.notOnBarLine(tick) }
-        return Score(title: meta.title, subtitle: meta.subtitle, keySig: meta.keySig, tempo: meta.tempo, source: meta.source,
-                     events: events, measures: measures, totalTicks: tick)
+        var sc = Score(title: meta.title, subtitle: meta.subtitle, keySig: meta.keySig, tempo: meta.tempo, source: meta.source,
+                       events: events, measures: measures, totalTicks: tick)
+        sc.measureStarts = measures.indices.map { $0 * BAR }
+        sc.measureLengths = measures.map { _ in BAR }
+        sc.measureTimes = measures.indices.map { $0 == 0 ? [4, 4] : nil }
+        return sc
+    }
+
+    /// General form for imported scores: explicit measures with their own lengths (ticks) and time signatures, any `tpb`.
+    /// Events that overrun their measure are clipped; short measures are padded with a rest so playback stays in time.
+    public static func finalizeMeasures(_ input: [[ScoreEvent]], lengths: [Int], times: [[Int]?], tpb: Int, meta: ScoreMeta, tempoMap: [TempoMark]) -> Score {
+        var events: [ScoreEvent] = []
+        var measures: [[Int]] = []
+        var starts: [Int] = []
+        var tick = 0
+        var realLengths: [Int] = []
+        for (m, list) in input.enumerated() {
+            // Guitar Pro allows over-full bars: stretch the bar rather than lose notes
+            let nominal = m < lengths.count ? lengths[m] : lengths.last ?? 4 * tpb
+            let len = max(nominal, list.reduce(0) { $0 + max(0, $1.dur) })
+            realLengths.append(len)
+            let start = tick
+            starts.append(start)
+            var ids: [Int] = []
+            var used = 0
+            for var ev in list {
+                if used >= len { break }
+                if ev.notes.count > 1 { ev.notes.sort { $0.string > $1.string } }   // low string first, like voicings
+                if used + ev.dur > len { ev.dur = len - used; ev.tuplet = 0; ev.tupletNormal = 0 }
+                ev.i = events.count; ev.tick = start + used; ev.measure = m; ev.barStart = start
+                ids.append(ev.i)
+                events.append(ev)
+                used += ev.dur
+            }
+            if used < len {
+                var rest = ScoreEvent(dur: len - used, rest: true, notes: [])
+                rest.i = events.count; rest.tick = start + used; rest.measure = m; rest.barStart = start
+                ids.append(rest.i)
+                events.append(rest)
+            }
+            measures.append(ids)
+            tick = start + len
+        }
+        var sc = Score(title: meta.title, subtitle: meta.subtitle, keySig: meta.keySig, tempo: meta.tempo, source: meta.source,
+                       time: times.first.flatMap { $0 } ?? [4, 4], tpb: tpb, bar: 4 * tpb, events: events, measures: measures, totalTicks: tick)
+        sc.measureStarts = starts
+        sc.measureLengths = realLengths
+        sc.measureTimes = measures.indices.map { $0 < times.count ? times[$0] : nil }
+        sc.tempoMap = tempoMap.sorted { $0.tick < $1.tick }
+        return sc
     }
 
     static func longNote(_ remaining: Int) throws -> Int {
@@ -243,8 +358,19 @@ public enum Exercises {
     /// Seconds-free timeline for the player: start/duration in beats.
     public static func timeline(_ score: Score) -> [TimelineItem] {
         score.events.map { ev in
-            TimelineItem(i: ev.i, beat: Double(ev.tick) / Double(TPB), beats: Double(ev.dur) / Double(TPB), rest: ev.rest,
-                         midis: ev.notes.map { $0.midi })
+            TimelineItem(i: ev.i, beat: Double(ev.tick) / Double(score.tpb), beats: Double(ev.dur) / Double(score.tpb), rest: ev.rest,
+                         midis: ev.notes.filter { !$0.tied }.map { $0.midi })
+        }
+    }
+
+    /// Timeline whose beats are stretched by the score's tempo map, so a transport running at `baseTempo` BPM
+    /// reproduces every tempo change (a passage at half tempo takes twice as many "beats").
+    public static func timeline(_ score: Score, baseTempo: Double) -> [TimelineItem] {
+        let tm = TempoTimeline(score: score)
+        return score.events.map { ev in
+            let b0 = tm.seconds(atTick: ev.tick) * baseTempo / 60
+            let b1 = tm.seconds(atTick: ev.tick + ev.dur) * baseTempo / 60
+            return TimelineItem(i: ev.i, beat: b0, beats: b1 - b0, rest: ev.rest, midis: ev.notes.filter { !$0.tied }.map { $0.midi })
         }
     }
 

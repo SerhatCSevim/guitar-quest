@@ -15,7 +15,13 @@ Change the music rules in the web engine first, regenerate the golden data
 - `Sources/MusicCore` — pure Swift engine (theory, shapes, voicings, scores/exercises, songs, game data, notation
   layout). JS function names and string ids (`major`, `box1`, `maj`, `updown` …) are kept as they are.
 - `Sources/GuitarQuest` — SwiftUI app: App/ (model, theme, snapshots), Audio/ (Karplus-Strong, transport),
-  Views/ (fretboard, notation, chord diagram), Features/ (six screens), Store/ (progress.json, practice clock).
+  Views/ (fretboard, notation, chord diagram), Features/ (seven screens), Store/ (progress.json, practice clock,
+  song library), Media/ (YouTube via WKWebView IFrame API, local audio via AVPlayer).
+- **Songs / Song Player** (macOS only): `Features/Songs*.swift`, `Store/SongLibrary.swift`, `Media/`,
+  `MusicCore/Import.swift` (MusicXML, Guitar Pro 7/8 gpif), `MusicCore/ImportGP5.swift` (Guitar Pro 3/4/5 binary),
+  `MusicCore/Sync.swift` (tempo map ↔ seconds, anchor mapping). Imported scores use 48 ticks per quarter; repeats
+  are unrolled (`measureLabels` keep the printed bar numbers). Never add copyrighted tabs to the repository; users
+  import their own files.
 - `Sources/GoldenCheck` — parity checker (`swift run GoldenCheck`), including all 20,160 exercises.
 - `scripts/build_app.sh` — makes `build/Guitar Quest.app` (`--install` moves it to /Applications).
 
@@ -24,13 +30,15 @@ Change the music rules in the web engine first, regenerate the golden data
 - Correct enharmonic spelling everywhere (E♯ in F♯ major, E♭ in A blues). Tab orientation = fretboard orientation
   (thin e string on top). Written pitch is one octave above the sounding pitch. Keep the wrong-answer explanations
   word for word — they are the teaching.
-- No third-party dependencies. No network access, no telemetry. The saved progress file has the same JSON shape as
-  the web app's `guitarQuest.v1` storage entry (`docs/05`).
+- No third-party dependencies. No telemetry. No network access, except the Songs tab's optional YouTube embed
+  (loaded only when the user attaches a video). The saved progress file has the same JSON shape as the web app's
+  `guitarQuest.v1` storage entry (`docs/05`).
 
 ## Engineering rules
 - In Swift always use `Theory.mod` instead of `%` (negative-safe). Randomness is injected so checks are repeatable.
-- "Done" = it builds, `node web/tests/run_tests.js` and `swift run GoldenCheck` pass, and the affected screen was
-  checked (by hand or with `GQ_SNAPSHOT_DIR`).
+- "Done" = it builds, `node web/tests/run_tests.js` and `swift run GoldenCheck` pass (engine parity + importer and sync
+  checks), and the affected screen was checked (by hand or with `GQ_SNAPSHOT_DIR`). Importer smoke run on a folder of
+  tab files: `GQ_IMPORT_DIR=<folder> swift run GoldenCheck`; player check: `GQ_MEDIA_CHECK=<youtube id>`.
 - Do not invent Apple API names; if unsure, compile and see. Mark anything unverified as unverified.
 - Building from the command line needs `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` when
   `xcode-select` points at the Command Line Tools (`scripts/build.sh` handles this).

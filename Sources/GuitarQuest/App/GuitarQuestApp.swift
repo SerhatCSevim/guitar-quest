@@ -19,6 +19,7 @@ struct GuitarQuestApp: App {
         AppDelegate.shared = (store, clock)
         Snapshots.runIfRequested(services)
         AudioCheck.runIfRequested(services)
+        MediaCheck.runIfRequested(services)
     }
 
     var body: some Scene {
@@ -98,6 +99,7 @@ struct RootView: View {
         case .quest: QuestView()
         case .scales: ScalesView()
         case .studio: StudioView()
+        case .songs: SongsView()
         case .harmony: HarmonyView()
         case .progress: ProgressView_()
         }

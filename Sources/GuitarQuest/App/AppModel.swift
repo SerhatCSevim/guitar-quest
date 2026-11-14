@@ -4,7 +4,7 @@ import Observation
 import MusicCore
 
 enum Screen: String, CaseIterable, Identifiable {
-    case explore, quest, scales, studio, harmony, progress
+    case explore, quest, scales, studio, songs, harmony, progress
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -12,6 +12,7 @@ enum Screen: String, CaseIterable, Identifiable {
         case .quest: return "Note Quest"
         case .scales: return "Scales"
         case .studio: return "Practice Studio"
+        case .songs: return "Songs"
         case .harmony: return "Chords & Harmony"
         case .progress: return "My Progress"
         }
@@ -66,8 +67,9 @@ final class Services {
     let audio: AudioEngine
     let clock: PracticeClock
     let model: AppModel
-    init(store: ProgressStore, audio: AudioEngine, clock: PracticeClock, model: AppModel) {
-        self.store = store; self.audio = audio; self.clock = clock; self.model = model
+    let songs: SongLibrary
+    init(store: ProgressStore, audio: AudioEngine, clock: PracticeClock, model: AppModel, songs: SongLibrary = SongLibrary()) {
+        self.store = store; self.audio = audio; self.clock = clock; self.model = model; self.songs = songs
     }
 }
 

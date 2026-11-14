@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GPIF>
+  <Score><Title>GPIF sample</Title><Artist>Test</Artist></Score>
+  <MasterTrack><Tracks>0</Tracks><Automations><Automation><Type>Tempo</Type><Linear>false</Linear><Bar>0</Bar><Position>0</Position><Visible>true</Visible><Value>120 2</Value></Automation></Automations></MasterTrack>
+  <Tracks><Track id="0"><Name>Lead</Name><Staves><Staff><Properties><Property name="Tuning"><Pitches>40 45 50 55 59 64</Pitches></Property></Properties></Staff></Staves></Track></Tracks>
+  <MasterBars>
+    <MasterBar><Key><AccidentalCount>1</AccidentalCount><Mode>Minor</Mode></Key><Time>4/4</Time><Bars>0</Bars></MasterBar>
+    <MasterBar><Time>3/4</Time><Bars>1</Bars></MasterBar>
+  </MasterBars>
+  <Bars><Bar id="0"><Voices>0 -1 -1 -1</Voices></Bar><Bar id="1"><Voices>1 -1 -1 -1</Voices></Bar></Bars>
+  <Voices><Voice id="0"><Beats>0 1 2 3 4</Beats></Voice><Voice id="1"><Beats>5 6</Beats></Voice></Voices>
+  <Beats>
+    <Beat id="0"><Rhythm ref="0"/><Notes>0</Notes></Beat>
+    <Beat id="1"><Rhythm ref="1"/><Notes>1</Notes></Beat>
+    <Beat id="2"><Rhythm ref="1"/><Notes>2</Notes></Beat>
+    <Beat id="3"><Rhythm ref="1"/><Notes>3</Notes></Beat>
+    <Beat id="4"><Rhythm ref="2"/><Notes>4 5</Notes><Properties><Property name="PalmMuted"><Enable/></Property></Properties></Beat>
+    <Beat id="5"><Rhythm ref="3"/><Notes>6</Notes></Beat>
+    <Beat id="6"><Rhythm ref="0"/></Beat>
+  </Beats>
+  <Rhythms>
+    <Rhythm id="0"><NoteValue>Quarter</NoteValue></Rhythm>
+    <Rhythm id="1"><NoteValue>Eighth</NoteValue><PrimaryTuplet num="3" den="2"/></Rhythm>
+    <Rhythm id="2"><NoteValue>Half</NoteValue></Rhythm>
+    <Rhythm id="3"><NoteValue>Quarter</NoteValue><AugmentationDot count="1"/></Rhythm>
+  </Rhythms>
+  <Notes>
+    <Note id="0"><Properties><Property name="String"><String>5</String></Property><Property name="Fret"><Fret>5</Fret></Property></Properties></Note>
+    <Note id="1"><Properties><Property name="String"><String>5</String></Property><Property name="Fret"><Fret>7</Fret></Property><Property name="HopoOrigin"><Enable/></Property></Properties></Note>
+    <Note id="2"><Properties><Property name="String"><String>5</String></Property><Property name="Fret"><Fret>8</Fret></Property></Properties></Note>
+    <Note id="3"><Properties><Property name="String"><String>4</String></Property><Property name="Fret"><Fret>5</Fret></Property></Properties></Note>
+    <Note id="4"><Properties><Property name="String"><String>0</String></Property><Property name="Fret"><Fret>0</Fret></Property></Properties></Note>
+    <Note id="5"><Properties><Property name="String"><String>1</String></Property><Property name="Fret"><Fret>2</Fret></Property></Properties></Note>
+    <Note id="6"><Properties><Property name="String"><String>4</String></Property><Property name="Fret"><Fret>5</Fret></Property></Properties><Tie origin="false" destination="true"/></Note>
+  </Notes>
+</GPIF>

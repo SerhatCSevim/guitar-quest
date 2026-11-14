@@ -16,6 +16,6 @@ let package = Package(
         .executableTarget(name: "GuitarQuest", dependencies: ["MusicCore"]),
         .executableTarget(name: "IconMaker"),
         // Golden parity checker (plain executable: works without XCTest / swift-testing). Run: swift run GoldenCheck
-        .executableTarget(name: "GoldenCheck", dependencies: ["MusicCore"], resources: [.copy("Golden")])
+        .executableTarget(name: "GoldenCheck", dependencies: ["MusicCore"], resources: [.copy("Golden"), .copy("Samples")])
     ]
 )

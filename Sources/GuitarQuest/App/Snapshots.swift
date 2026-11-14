@@ -50,6 +50,7 @@ struct ScreenPage: View {
             case .quest: QuestView()
             case .scales: ScalesView()
             case .studio: StudioView()
+            case .songs: SongsView()
             case .harmony: HarmonyView()
             case .progress: ProgressView_()
             }

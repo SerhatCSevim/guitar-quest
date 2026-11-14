@@ -26,10 +26,14 @@ struct ScoreView: View {
     var onSeek: ((Int) -> Void)? = nil
     /// Pass a ScrollViewReader proxy to scroll the active system into view.
     var scrollProxy: ScrollViewProxy? = nil
+    /// Measures tinted as the practice loop, and a tap on a bar number / the strip above a measure.
+    var loopRange: ClosedRange<Int>? = nil
+    var onMeasureTap: ((Int) -> Void)? = nil
 
     var body: some View {
         ScoreFrame(score: score, options: options) {
-            ScoreCanvas(score: score, options: options, active: active, next: next, onSeek: onSeek, scrollProxy: scrollProxy)
+            ScoreCanvas(score: score, options: options, active: active, next: next, onSeek: onSeek, scrollProxy: scrollProxy,
+                        loopRange: loopRange, onMeasureTap: onMeasureTap)
         }
     }
 }
@@ -62,6 +66,8 @@ struct ScoreCanvas: View {
     var next: Int?
     var onSeek: ((Int) -> Void)?
     var scrollProxy: ScrollViewProxy?
+    var loopRange: ClosedRange<Int>? = nil
+    var onMeasureTap: ((Int) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -73,7 +79,7 @@ struct ScoreCanvas: View {
                 let dx = single ? max(0, (geo.size.width - W) / 2) : 0
                 ZStack(alignment: .topLeading) {
                     Canvas(rendersAsynchronously: false) { ctx, _ in
-                        let drawer = NotationDrawer(L: L, active: active, next: next)
+                        let drawer = NotationDrawer(L: L, active: active, next: next, loopRange: loopRange)
                         for si in L.systems.indices {
                             var c = ctx
                             c.translateBy(x: dx, y: CGFloat(si) * L.height)
@@ -82,10 +88,15 @@ struct ScoreCanvas: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { loc in
-                        guard let onSeek else { return }
                         let si = Int(loc.y / L.height)
                         guard si >= 0, si < L.systems.count else { return }
                         let x = loc.x - dx
+                        let yIn = loc.y - CGFloat(si) * L.height
+                        let stripBottom = options.showStaff || !options.showTab ? L.staffTop - 6 : L.tabTop - 6
+                        if let onMeasureTap, yIn < stripBottom {
+                            for b in L.systems[si].bars where x >= b.x0 && x <= b.x1 { onMeasureTap(b.m); return }
+                        }
+                        guard let onSeek else { return }
                         for i in L.systems[si].events where x >= L.prep[i].slot0 && x <= L.prep[i].slot1 { onSeek(i); return }
                     }
                     // invisible anchors for auto-scroll

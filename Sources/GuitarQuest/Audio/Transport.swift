@@ -39,6 +39,10 @@ final class Transport {
     var countIn = true
     var sound = true
     var trainer = TrainerSettings()
+    /// Optional practice range: when set, playback (and looping) covers items[loopStartIndex...] up to `loopEndBeat`.
+    var loopStartIndex: Int? = nil
+    var loopEndBeat: Double? = nil
+    private var endBeat: Double { min(totalBeats, loopEndBeat ?? totalBeats) }
 
     private(set) var playing = false
     private(set) var startIndex = 0
@@ -67,6 +71,15 @@ final class Transport {
         self.totalBeats = totalBeats
         self.beatsPerBar = beatsPerBar
         startIndex = 0
+        loopStartIndex = nil
+        loopEndBeat = nil
+    }
+
+    /// Restrict playback to a range (nil, nil = whole piece). Takes effect at the next play / loop restart.
+    func setRange(startIndex: Int?, endBeat: Double?) {
+        loopStartIndex = startIndex
+        loopEndBeat = endBeat
+        if let ls = startIndex, !playing { self.startIndex = max(0, min(items.count - 1, ls)) }
     }
 
     func setTempo(_ newBpm: Int) {
@@ -83,6 +96,7 @@ final class Transport {
     func play(from index: Int? = nil, skipCountIn: Bool = false) {
         guard audio.ensure(), !items.isEmpty, !playing else { return }
         if let index { startIndex = max(0, min(items.count - 1, index)) }
+        if let ls = loopStartIndex, startIndex < ls || items[startIndex].beat >= endBeat { startIndex = max(0, min(items.count - 1, ls)) }
         audio.warm(items.flatMap { $0.midis })
         playing = true
         let spb = 60.0 / Double(bpm)
@@ -115,7 +129,7 @@ final class Transport {
         // music, so switching the metronome on mid-play does not fire a burst of late clicks.
         let curBeat = (audio.now - p.origin) / p.spb
         if Double(nextClick) < floor(curBeat) { nextClick = Int(ceil(curBeat - 1e-9)) }
-        while Double(nextClick) < totalBeats {
+        while Double(nextClick) < endBeat {
             let t = p.origin + Double(nextClick) * p.spb
             if t > horizon { break }
             if metronome || Double(nextClick) < countInUntil {
@@ -125,7 +139,7 @@ final class Transport {
             nextClick += 1
         }
         // notes
-        while nextItem < items.count {
+        while nextItem < items.count && items[nextItem].beat < endBeat - 1e-9 {
             let it = items[nextItem]
             let t = p.origin + it.beat * p.spb
             if t > horizon { break }
@@ -141,14 +155,16 @@ final class Transport {
             nextItem += 1
         }
         // end of pass
-        let endT = p.origin + totalBeats * p.spb
-        if nextItem >= items.count && endT <= horizon {
+        let endT = p.origin + endBeat * p.spb
+        let itemsDone = nextItem >= items.count || items[nextItem].beat >= endBeat - 1e-9
+        if itemsDone && endT <= horizon {
             if loop {
                 if trainer.on && bpm < trainer.target {
                     bpm = min(trainer.target, bpm + trainer.step)
                     onLoop?(bpm)
                 }
                 let spb = 60.0 / Double(bpm)
+                if let ls = loopStartIndex { startIndex = max(0, min(items.count - 1, ls)) }
                 let loopStart = items[startIndex].beat
                 pass = Pass(origin: endT - loopStart * spb, spb: spb, fromBeat: loopStart)
                 nextItem = startIndex
@@ -169,6 +185,7 @@ final class Transport {
             var k = startIndex
             while k < items.count {
                 let it = items[k]
+                if it.beat >= endBeat - 1e-9 { break }
                 if beat >= it.beat - 1e-6 && beat < it.beat + it.beats { idx = k; break }
                 if it.beat > beat { break }
                 k += 1

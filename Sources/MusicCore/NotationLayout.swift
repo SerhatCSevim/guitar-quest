@@ -8,6 +8,7 @@ public struct Glyph: Hashable, Codable, Sendable {
     public var head: HeadKind
     public var flags: Int
     public var dots: Int
+    public init(head: HeadKind, flags: Int, dots: Int) { self.head = head; self.flags = flags; self.dots = dots }
 }
 
 public struct PreparedHead: Hashable, Sendable {
@@ -53,6 +54,8 @@ public struct SystemBar: Hashable, Sendable {
     public var m: Int
     public var x0: Double
     public var x1: Double
+    /// Time signature to print at the start of this measure (only where it changes).
+    public var timeSig: [Int]? = nil
 }
 
 public struct ScoreSystem: Hashable, Sendable {
@@ -112,19 +115,23 @@ public enum Notation {
     public static let TS: Double = 13       // tab line spacing
     public static let STEM: Double = 34
 
-    public static func noteValue(_ ev: ScoreEvent) -> Glyph {
-        let d = ev.tuplet == 3 ? ev.dur * 3 / 2 : ev.dur
-        switch d {
-        case 48: return Glyph(head: .whole, flags: 0, dots: 0)
-        case 36: return Glyph(head: .half, flags: 0, dots: 1)
-        case 24: return Glyph(head: .half, flags: 0, dots: 0)
-        case 18: return Glyph(head: .black, flags: 0, dots: 1)
-        case 12: return Glyph(head: .black, flags: 0, dots: 0)
-        case 9: return Glyph(head: .black, flags: 1, dots: 1)
-        case 6: return Glyph(head: .black, flags: 1, dots: 0)
-        case 3: return Glyph(head: .black, flags: 2, dots: 0)
-        default: preconditionFailure("No glyph for duration \(ev.dur)")
-        }
+    /// Written value → glyph. `tpb` = ticks per quarter note (12 for the built-in scores, 48 for imported ones).
+    public static func noteValue(_ ev: ScoreEvent, tpb: Int = Exercises.TPB) -> Glyph {
+        let q = Double(ev.writtenDur) / Double(tpb)   // in quarter notes
+        // (quarters, head, flags, dots) — longest first; double dots included for imported scores
+        let table: [(Double, HeadKind, Int, Int)] = [
+            (4, .whole, 0, 0), (3.5, .half, 0, 2), (3, .half, 0, 1), (2, .half, 0, 0),
+            (1.75, .black, 0, 2), (1.5, .black, 0, 1), (1, .black, 0, 0),
+            (0.875, .black, 1, 2), (0.75, .black, 1, 1), (0.5, .black, 1, 0),
+            (0.4375, .black, 2, 2), (0.375, .black, 2, 1), (0.25, .black, 2, 0),
+            (0.1875, .black, 3, 1), (0.125, .black, 3, 0),
+            (0.09375, .black, 4, 1), (0.0625, .black, 4, 0),
+        ]
+        for (v, head, flags, dots) in table where abs(q - v) < 1e-6 { return Glyph(head: head, flags: flags, dots: dots) }
+        // not a standard value (imported oddity): pick the nearest written value so it still draws
+        var best = table[0]
+        for row in table where abs(row.0 - q) < abs(best.0 - q) { best = row }
+        return Glyph(head: best.1, flags: best.2, dots: best.3)
     }
 
     /// Works out written pitch, staff position and which accidentals must be printed (bar-by-bar).
@@ -135,7 +142,7 @@ public enum Notation {
         var bar = -1
         for ev in score.events {
             if ev.measure != bar { bar = ev.measure; accState = [:] }
-            let nv = noteValue(ev)
+            let nv = noteValue(ev, tpb: score.tpb)
             let heads = ev.notes.map { n -> PreparedHead in
                 let oct = Theory.octaveOf(n.midi, n.spelled) + 1 // guitar music is written an octave higher
                 let pos = Theory.staffPos(n.spelled.letter, oct)
@@ -150,8 +157,8 @@ public enum Notation {
         return out
     }
 
-    public static func evWidth(_ p: PreparedEvent) -> Double {
-        let w = 16 + 32 * pow(Double(p.ev.dur) / 12, 0.55)
+    public static func evWidth(_ p: PreparedEvent, tpb: Int = Exercises.TPB) -> Double {
+        let w = 16 + 32 * pow(Double(p.ev.dur) / Double(tpb), 0.55)
         return w + (p.hasAcc ? 9 : 0) + (p.nv.dots > 0 ? 4 : 0)
     }
 
@@ -162,7 +169,7 @@ public enum Notation {
         for (i, p) in prep.enumerated() {
             let ev = p.ev
             let beamable = !ev.rest && p.nv.flags > 0
-            let beat = ev.measure * 4 + (ev.tick % score.bar) / score.tpb
+            let beat = ev.measure * 1000 + (ev.tick - ev.barStart) / score.tpb
             if beamable, var c = cur, c.beat == beat, c.tuplet == ev.tuplet, c.last == i - 1 {
                 c.items.append(i); c.last = i
                 cur = c
@@ -188,7 +195,16 @@ public enum Notation {
         func headerW(_ first: Bool) -> Double {
             clefW + (opts.showStaff && ksCount > 0 ? Double(ksCount) * 9.5 + 6 : 0) + (first && opts.showStaff ? 26 : 0) + 6
         }
-        let mWidths = score.measures.map { ids in 12 + ids.reduce(0.0) { $0 + evWidth(prep[$1]) } + 4 }
+        // a time-signature change inside the piece gets room for its digits at the start of that measure
+        var tsChange: [Int: [Int]] = [:]
+        var lastTS = score.time
+        for m in score.measures.indices where m < score.measureTimes.count {
+            if let t = score.measureTimes[m], m > 0, t != lastTS { tsChange[m] = t }
+            if let t = score.measureTimes[m] { lastTS = t }
+        }
+        let mWidths = score.measures.indices.map { m in
+            12 + (tsChange[m] != nil ? 26.0 : 0) + score.measures[m].reduce(0.0) { $0 + evWidth(prep[$1], tpb: score.tpb) } + 4
+        }
         var systems: [ScoreSystem] = []
         var cur: ScoreSystem? = nil
         for m in score.measures.indices {
@@ -226,9 +242,9 @@ public enum Notation {
             systems[si].events = []
             for m in systems[si].measures {
                 let mx = x
-                var ex = x + 12 * scale
+                var ex = x + (12 + (tsChange[m] != nil ? 26.0 : 0)) * scale
                 for i in score.measures[m] {
-                    let w = evWidth(prep[i]) * scale
+                    let w = evWidth(prep[i], tpb: score.tpb) * scale
                     prep[i].x = ex + 6 + (prep[i].hasAcc ? 9 : 0)
                     prep[i].slot0 = ex; prep[i].slot1 = ex + w
                     prep[i].system = si
@@ -236,7 +252,7 @@ public enum Notation {
                     ex += w
                 }
                 x = mx + mWidths[m] * scale
-                systems[si].bars.append(SystemBar(m: m, x0: mx, x1: x))
+                systems[si].bars.append(SystemBar(m: m, x0: mx, x1: x, timeSig: tsChange[m]))
             }
             systems[si].right = x
         }

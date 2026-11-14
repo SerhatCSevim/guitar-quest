@@ -12,7 +12,8 @@ It comes in two versions with the same features:
 | Install | nothing — open `web/index.html` | build it with Swift (see below) |
 | Progress saved in | the browser's local storage | `~/Library/Application Support/GuitarQuest/progress.json` |
 
-Both work completely offline: no account, no internet connection, no tracking. The interface is in English.
+Both work completely offline: no account, no tracking, and no internet connection — except the macOS **Songs** tab,
+which only goes online when you choose to attach a YouTube video. The interface is in English.
 
 ![Fretboard Explorer](docs/screenshots/01_fretboard_explorer.jpg)
 
@@ -25,6 +26,7 @@ Both work completely offline: no account, no internet connection, no tracking. T
 | **Scales** | Major, natural minor, major and minor pentatonic, and blues in all 12 keys: pentatonic shapes 1–5, open and moveable positions, 3-notes-per-string forms. Press play to hear the shape. |
 | **Practice Studio** | A Guitar-Pro-like player: staff + tab, moving cursor, tempo, metronome, count-in, loop, speed trainer, and a "guitar off" switch so you can play along. Scale exercises (up/down, groups of 3 or 4, thirds; quarter notes to sixteenths) and five public-domain songs. |
 | **Chords & Harmony** | Chord library (open, barre and power chords), *Build a chord* from the scale, chord families in a key (I … vii°), *Jam along* with strumming patterns, and theory games (steps, scale degrees, triads, chord families, key signatures). |
+| **Songs** (macOS) | Import your own tab (Guitar Pro `.gp5/.gp4/.gp3/.gp` or MusicXML), attach the recording it goes with — a YouTube video or a local audio file — mark where a few bars start, and the tab follows the recording. Loop any range of bars at 0.5×/0.75×/1×, or play it with the built-in guitar sound and metronome. Without a tab it is still an A–B looper for the video. |
 | **My Progress** | Minutes practised, day streak, accuracy, a colour map of which frets you know, and your stars. |
 
 Settings: note names as `C D E`, `Do Re Mi` or both; sharps or flats; note colours on/off; volume.
@@ -63,11 +65,22 @@ the Xcode licence (`sudo xcodebuild -license accept`), plain `swift build` with
 
 Taking progress from the web app to the Mac app: see [docs/05](docs/05_DATA_AND_PROGRESS.md) (not tested yet).
 
+### Songs tab: where tabs come from
+The app ships no copyrighted tabs. Buy or export the Guitar Pro file of the song you are learning (Ultimate Guitar Pro,
+Songsterr Plus, the teacher's own file, or a MusicXML export from Guitar Pro / TuxGuitar / MuseScore) and import it
+with **Import tab…**. Guitar Pro 6 (`.gpx`) is the one format that is not readable: export it as `.gp5`, `.gp` or
+MusicXML first. Repeats are unrolled on import (printed bar numbers are kept) so the tab runs linearly like the recording.
+Headless checks: `GQ_IMPORT_DIR=<folder> swift run GoldenCheck` summarises every tab file in a folder;
+`GQ_MEDIA_CHECK=<youtube id or link> .build/debug/GuitarQuest` tests the embedded player;
+`GQ_MEDIA_CHECK_FILE=<audio file>` tests the audio player.
+
 ## Tests
 - **Web:** `node web/tests/run_tests.js` (Node 18+) — 2,717 checks: every scale, key and shape, every chord shape,
   all 20,160 practice-exercise combinations and the notation renderer.
 - **macOS:** `swift run GoldenCheck` — compares the Swift engine result-for-result with output exported from the web
-  engine (`Sources/GoldenCheck/Golden/*.json`). After changing the web engine, regenerate that data with
+  engine (`Sources/GoldenCheck/Golden/*.json`), and checks the tab importers against the same pieces saved as
+  Guitar Pro 3, 4, 5 and 7 (test fixtures from [alphaTab](https://github.com/CoderLine/alphaTab), MPL-2.0, in
+  `Sources/GoldenCheck/Samples/alphatab`). After changing the web engine, regenerate the golden data with
   `node web/tests/export_golden.js Sources/GoldenCheck/Golden`.
 
 ## Project layout
@@ -75,8 +88,8 @@ Taking progress from the web app to the Mac app: see [docs/05](docs/05_DATA_AND_
 | Path | What it is |
 |---|---|
 | `web/` | The web app: plain HTML, CSS and JavaScript, no build step and no dependencies. `js/theory.js` (music rules), `js/chords.js`, `js/exercises.js`, `js/notation.js` (staff + tab drawing), `js/audio.js` (synthesised guitar), `js/views/` (one file per screen), `tests/` |
-| `Sources/MusicCore` | The same music engine in Swift (no UI, no audio) |
-| `Sources/GuitarQuest` | The macOS app (SwiftUI): screens, fretboard, notation, audio, saved progress |
+| `Sources/MusicCore` | The same music engine in Swift (no UI, no audio), plus the tab importers (`Import.swift`: MusicXML and Guitar Pro 7/8, `ImportGP5.swift`: Guitar Pro 3/4/5) and the recording ↔ tab sync maths (`Sync.swift`) |
+| `Sources/GuitarQuest` | The macOS app (SwiftUI): screens, fretboard, notation, audio, saved progress; `Media/` holds the YouTube (WKWebView) and audio-file players |
 | `Sources/GoldenCheck` | The parity checker for the Swift engine |
 | `Sources/IconMaker` | Draws the macOS app icon |
 | `docs/` | Specifications (features, music engine, notation, audio, data, architecture, testing) and screenshots |
