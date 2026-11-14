@@ -465,7 +465,8 @@ extension ScoreImporter {
                     if major == 5 {
                         if h == 2 { try r.skip(3) } else if h == 3 { try r.skip(1) }
                     }
-                    marks.append("harm")
+                    // some exporters set the harmonic flag with type 0 (= none); only a real type is a harmonic
+                    if h > 0 { marks.append(h == 1 ? "harm" : (major == 5 && h == 3) || (major < 5 && h == 17) ? "t.harm" : (major == 5 && h == 4) || (major < 5 && h == 22) ? "p.h." : "harm") }
                 }
                 if f2 & 0x20 != 0 { _ = try r.sbyte(); _ = try r.sbyte(); marks.append("tr") }
                 if f2 & 0x40 != 0 { marks.append("~") }
